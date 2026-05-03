@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -34,24 +37,19 @@ type AppConfig struct {
 }
 
 func main() {
-	// Parse command-line parameters and validate them, exiting with an error if
-	// something is wrong with the input
 	config, err := parseAppParameters()
 	if err != nil {
 		os.Exit(1)
 	}
 
-	// Start processing the URLs based on the provided configuration
 	processUrls(*config)
 }
 
 func parseAppParameters() (*AppConfig, error) {
-	// Define flags
 	toFile := flag.Bool("file", false, "Write the result in a file 'results.txt'")
 	rate := flag.Int("rate", 2, "Requests per second")
 	inputFile := flag.String("input", "", "Text file containing a list of URLs (one per line)")
 
-	// Customize message to show when the user runs the program with -h or --help
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of GopherSpy:\n")
 		fmt.Fprintf(os.Stderr, "  go run main.go [flags] url1 url2 url3...\n\n")
@@ -64,7 +62,6 @@ func parseAppParameters() (*AppConfig, error) {
 	var urls []string
 
 	if *inputFile != "" {
-		// Add URLs from a file if the -input flag is used
 		fileUrls, err := readUrlsFromFile(*inputFile)
 		if err != nil {
 			fmt.Printf("Error reading input file: %v\n", err)
@@ -72,11 +69,9 @@ func parseAppParameters() (*AppConfig, error) {
 		}
 		urls = append(urls, fileUrls...)
 	} else {
-		// Add URLs passed directly in the command (separated by space)
 		urls = append(urls, flag.Args()...)
 	}
 
-	// Validation: If no URLs are provided, stop execution and show an error message
 	if len(urls) == 0 {
 		fmt.Println("Error: No URLs provided.")
 		flag.Usage()
@@ -127,17 +122,33 @@ func processUrls(config AppConfig) {
 
 	bar := progressbar.Default(int64(len(config.URLs)), "Processing URLs...")
 
+	// Set graceful shutdown on Ctrl+C
+	ctx, cancel := context.WithCancel(context.Background())
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n[!] Program interrupted. Shutting down gracefully...")
+		cancel()
+	}()
+
+	counter := 0
+
+loop:
 	for _, url := range config.URLs {
-		wg.Add(1)
-
-		// Wait for the next "tick" of the clock to respect the Rate Limit
-		<-ticker.C
-
-		go func(u string) {
-			defer wg.Done()
-			resultsChan <- fetchTitle(u)
-			bar.Add(1)
-		}(url)
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-ticker.C:
+			// Wait for the next "tick" of the clock to respect the Rate Limit
+			wg.Add(1)
+			go func(u string) {
+				defer wg.Done()
+				resultsChan <- fetchTitle(u)
+				counter++
+				bar.Add(1)
+			}(url)
+		}
 	}
 
 	// Goroutine to close the channel once all workers are done
@@ -146,10 +157,9 @@ func processUrls(config AppConfig) {
 		close(resultsChan)
 	}()
 
-	// Export results as they come in, either to console or to a file
 	exportResults(resultsChan, config.ToFile)
 
-	fmt.Println("\nAll URLs processed.")
+	fmt.Printf("\n%d out of %d URLs processed.\n", counter, len(config.URLs))
 	if config.ToFile {
 		fmt.Println("Results will be saved in 'results.txt'.")
 	}
@@ -158,7 +168,8 @@ func processUrls(config AppConfig) {
 // fetchTitle performs the HTTP request and extracts the page title, returning a
 // Result struct with the outcome
 func fetchTitle(url string) Result {
-	res, err := http.Get(url)
+	client := http.Client{Timeout: 5 * time.Second}
+	res, err := client.Get(url)
 	if err != nil {
 		return Result{URL: url, Error: err}
 	}
