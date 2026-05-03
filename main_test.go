@@ -45,7 +45,7 @@ func TestMainFlow_ValidURLs_SaveToFile(t *testing.T) {
 	chdir(t, workDir)
 
 	output := runApplication(t, []string{"-rate", "1000", "-file", server.URL})
-	if !strings.Contains(output, "Results will be saved in 'results.txt'...") {
+	if !strings.Contains(output, "Results will be saved in 'results.txt'.") {
 		t.Fatalf("expected file output notice, got:\n%s", output)
 	}
 

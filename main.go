@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/schollz/progressbar/v3"
 )
 
 // Result represents the outcome of processing a single URL, including the URL
@@ -124,6 +125,8 @@ func processUrls(config AppConfig) {
 
 	fmt.Printf("Starting processing of %d URLs with a limit of %d req/s...\n\n", len(config.URLs), config.Rate)
 
+	bar := progressbar.Default(int64(len(config.URLs)), "Processing URLs...")
+
 	for _, url := range config.URLs {
 		wg.Add(1)
 
@@ -133,6 +136,7 @@ func processUrls(config AppConfig) {
 		go func(u string) {
 			defer wg.Done()
 			resultsChan <- fetchTitle(u)
+			bar.Add(1)
 		}(url)
 	}
 
@@ -144,6 +148,11 @@ func processUrls(config AppConfig) {
 
 	// Export results as they come in, either to console or to a file
 	exportResults(resultsChan, config.ToFile)
+
+	fmt.Println("\nAll URLs processed.")
+	if config.ToFile {
+		fmt.Println("Results will be saved in 'results.txt'.")
+	}
 }
 
 // fetchTitle performs the HTTP request and extracts the page title, returning a
@@ -179,7 +188,6 @@ func exportResults(results <-chan Result, toFile bool) {
 			return
 		}
 		defer f.Close()
-		fmt.Println("Results will be saved in 'results.txt'...")
 	}
 
 	for res := range results {
