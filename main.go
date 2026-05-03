@@ -112,7 +112,8 @@ func readUrlsFromFile(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
-// processUrls groups the concurrency logic we have built so far, making it easier to read and maintain
+// processUrls groups the concurrency logic we have built so far, making it easier to
+// read and maintain
 func processUrls(config AppConfig) {
 	// The Ticker sends a signal on a channel at regular intervals
 	ticker := time.NewTicker(time.Second / time.Duration(config.Rate))

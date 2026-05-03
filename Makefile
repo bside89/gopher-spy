@@ -25,6 +25,6 @@ clean:
 	rm -f ${BINARY_NAME}
 	rm -f results.txt
 
-## test: Run unit tests (if any)
+## test: Run unit tests
 test:
 	go test ./... -v

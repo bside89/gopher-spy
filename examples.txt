@@ -1,0 +1,5 @@
+https://go.dev
+https://gobyexample.com
+https://www.google.com
+https://www.github.com
+https://www.wikipedia.org
