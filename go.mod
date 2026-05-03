@@ -1,4 +1,4 @@
-module gopher-sky
+module gopher-spy
 
 go 1.26.2
 
