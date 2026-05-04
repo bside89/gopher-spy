@@ -13,28 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"gopher-spy/internal/domain"
+
 	"github.com/PuerkitoBio/goquery"
 	"github.com/schollz/progressbar/v3"
 )
-
-// Result represents the outcome of processing a single URL, including the URL
-// itself, the page title, HTTP status code, and any error encountered during the
-// process.
-type Result struct {
-	URL    string
-	Title  string
-	Status int
-	Error  error
-}
-
-// AppConfig groups the program's configuration settings to facilitate parameter
-// passing
-type AppConfig struct {
-	ToFile    bool
-	Rate      int
-	InputFile string
-	URLs      []string
-}
 
 func main() {
 	config, err := parseAppParameters()
@@ -45,8 +28,10 @@ func main() {
 	processUrls(*config)
 }
 
-func parseAppParameters() (*AppConfig, error) {
-	toFile := flag.Bool("file", false, "Write the result in a file 'results.txt'")
+// parseAppParameters handles the command-line arguments and flags, returning an
+// AppConfig struct
+func parseAppParameters() (*domain.AppConfig, error) {
+	format := flag.String("format", "console", "Output format: console, txt, json, xml")
 	rate := flag.Int("rate", 2, "Requests per second")
 	inputFile := flag.String("input", "", "Text file containing a list of URLs (one per line)")
 
@@ -78,8 +63,8 @@ func parseAppParameters() (*AppConfig, error) {
 		return nil, fmt.Errorf("No URLs provided")
 	}
 
-	config := AppConfig{
-		ToFile:    *toFile,
+	config := domain.AppConfig{
+		Format:    *format,
 		Rate:      *rate,
 		InputFile: *inputFile,
 		URLs:      urls,
@@ -110,12 +95,12 @@ func readUrlsFromFile(path string) ([]string, error) {
 
 // processUrls groups the concurrency logic we have built so far, making it easier to
 // read and maintain
-func processUrls(config AppConfig) {
+func processUrls(config domain.AppConfig) {
 	// The Ticker sends a signal on a channel at regular intervals
 	ticker := time.NewTicker(time.Second / time.Duration(config.Rate))
 	defer ticker.Stop()
 
-	resultsChan := make(chan Result, len(config.URLs))
+	resultsChan := make(chan domain.Result, len(config.URLs))
 	var wg sync.WaitGroup
 
 	fmt.Printf("Starting processing of %d URLs with a limit of %d req/s...\n\n", len(config.URLs), config.Rate)
@@ -157,30 +142,27 @@ loop:
 		close(resultsChan)
 	}()
 
-	exportResults(resultsChan, config.ToFile)
+	exportResults(resultsChan, config.Format)
 
 	fmt.Printf("\n%d out of %d URLs processed.\n", counter, len(config.URLs))
-	if config.ToFile {
-		fmt.Println("Results will be saved in 'results.txt'.")
-	}
 }
 
 // fetchTitle performs the HTTP request and extracts the page title, returning a
 // Result struct with the outcome
-func fetchTitle(url string) Result {
+func fetchTitle(url string) domain.Result {
 	client := http.Client{Timeout: 5 * time.Second}
 	res, err := client.Get(url)
 	if err != nil {
-		return Result{URL: url, Error: err}
+		return domain.Result{URL: url, Error: err.Error()}
 	}
 	defer res.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		return Result{URL: url, Status: res.StatusCode, Error: err}
+		return domain.Result{URL: url, Status: res.StatusCode, Error: err.Error()}
 	}
 
-	return Result{
+	return domain.Result{
 		URL:    url,
 		Title:  doc.Find("title").Text(),
 		Status: res.StatusCode,
@@ -188,31 +170,24 @@ func fetchTitle(url string) Result {
 }
 
 // exportResults decides where to print the data
-func exportResults(results <-chan Result, toFile bool) {
-	var f *os.File
-	var err error
-
-	if toFile {
-		f, err = os.Create("results.txt")
-		if err != nil {
-			fmt.Println("Error creating file:", err)
-			return
-		}
-		defer f.Close()
-	}
+func exportResults(results <-chan domain.Result, format string) {
+	var exporter domain.Exporter
+	var resultsSlice = make([]domain.Result, 0)
 
 	for res := range results {
-		output := ""
-		if res.Error != nil {
-			output = fmt.Sprintf("[ERROR] %s: %v\n", res.URL, res.Error)
-		} else {
-			output = fmt.Sprintf("[OK %d] %s -> %s\n", res.Status, res.URL, res.Title)
-		}
+		resultsSlice = append(resultsSlice, res)
+	}
 
-		if toFile {
-			f.WriteString(output)
-		} else {
-			fmt.Print(output)
+	filename := fmt.Sprintf("results.%s", format)
+
+	exporter = domain.GetExporter(format)
+
+	err := exporter.Export(resultsSlice, filename)
+	if err != nil {
+		fmt.Printf("\nError exporting results: %v\n", err)
+	} else {
+		if format != "console" {
+			fmt.Printf("\nResults will be saved in '%s'.\n", filename)
 		}
 	}
 }

@@ -40,4 +40,4 @@ go.work.sum
 .vscode/
 
 # Results
-results.txt
+results.*
