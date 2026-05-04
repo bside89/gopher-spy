@@ -44,7 +44,7 @@ func TestMainFlow_ValidURLs_SaveToFile(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
 
-	output := runApplication(t, []string{"-rate", "1000", "-file", server.URL})
+	output := runApplication(t, []string{"-rate", "1000", "-format=txt", server.URL})
 	if !strings.Contains(output, "Results will be saved in 'results.txt'.") {
 		t.Fatalf("expected file output notice, got:\n%s", output)
 	}
@@ -60,7 +60,7 @@ func TestMainFlow_InvalidURL_SaveToFile(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
 
-	runApplication(t, []string{"-rate", "1000", "-file", server.URL, "http://%"})
+	runApplication(t, []string{"-rate", "1000", "-format=txt", server.URL, "http://%"})
 
 	content := readFile(t, filepath.Join(workDir, "results.txt"))
 	if !strings.Contains(content, fmt.Sprintf("[OK 200] %s -> Gopher Spy", server.URL)) {
